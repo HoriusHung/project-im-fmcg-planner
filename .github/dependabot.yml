@@ -1,0 +1,19 @@
+# Dependabot configuration (Milestone 1 Plan v4.4.2, Phase 0).
+#
+# Caveat (verified in planning): the "uv" ecosystem can update uv.lock, but its
+# support is subject to the open upstream issue astral-sh/uv#2512. Lockfile
+# updates must therefore always be reviewed together with pyproject.toml, and
+# `uv sync --locked` in CI is the gate that catches any inconsistency.
+version: 2
+updates:
+  # Project dependencies (pyproject.toml + uv.lock).
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  # Third-party Actions pinning: every action is pinned to a full commit SHA in
+  # ci.yml; Dependabot keeps those pins (and their version comments) current.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

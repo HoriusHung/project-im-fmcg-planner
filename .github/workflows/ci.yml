@@ -1,0 +1,73 @@
+# CI workflow — Milestone 1 Plan v4.4.2, Phase 0 (Checkpoint 3).
+#
+# Security posture (approved plan):
+#   * Least privilege: the GITHUB_TOKEN gets read-only access and checkout does
+#     not persist credentials into the runner's git config.
+#   * Every third-party action is pinned to a full commit SHA (verified
+#     2026-10-31 via the GitHub API); Dependabot keeps the pins current.
+#   * `uv sync --locked` (NOT --frozen) verifies that uv.lock is consistent
+#     with pyproject.toml before any code runs.
+#
+# Order matters: checkout MUST come before setup-uv. setup-uv exposes its
+# `python-version` input as the UV_PYTHON precedence gate for the job, which
+# must override the repo-local .python-version (3.14) on the 3.13 leg.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.13", "3.14"]
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv and select the matrix Python
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.6" # pin the uv CLI to the locally verified dev environment (0.13.6)
+          # Job-level UV_PYTHON gate: wins over the repo-local .python-version.
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        # --locked verifies uv.lock <-> pyproject.toml consistency and fails on drift.
+        run: uv sync --locked
+
+      - name: Verify Python interpreter version (cross-platform assertion)
+        env:
+          EXPECTED_PYTHON_VERSION: ${{ matrix.python-version }}
+        run: |
+          uv run --no-sync python -c "import os, sys; expected = tuple(int(p) for p in os.environ['EXPECTED_PYTHON_VERSION'].split('.')); actual = sys.version_info[:2]; print('expected (major, minor):', expected); print('actual interpreter:', sys.version); assert actual == expected, 'Python version mismatch: expected %r, got %r' % (expected, actual)"
+
+      - name: Verify package import
+        run: uv run --no-sync python -c "import fmcg_planner; print(fmcg_planner.__version__)"
+
+      - name: Lint (Ruff check)
+        run: uv run --no-sync ruff check .
+
+      - name: Format check (Ruff format)
+        run: uv run --no-sync ruff format --check .
+
+      - name: Type check (mypy)
+        # Explicit path; equivalent to [tool.mypy].files = ["src/fmcg_planner"].
+        run: uv run --no-sync mypy src/fmcg_planner
+
+      - name: Test (pytest with 80% coverage gate)
+        # Coverage gate and report flags come from [tool.pytest.ini_options].addopts.
+        run: uv run --no-sync pytest -v
